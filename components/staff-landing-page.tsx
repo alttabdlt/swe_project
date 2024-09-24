@@ -9,9 +9,10 @@ import { Calendar, Clock, Briefcase } from "lucide-react"
 import Link from 'next/link'
 import { useSession, signOut } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
+import { format, startOfWeek, addDays } from 'date-fns'
 
 interface WorkloadDay {
-  day: string;
+  date: Date;
   hours: number;
   jobs: number;
 }
@@ -39,71 +40,54 @@ export default function StaffLandingPageComponent() {
     }
   }, [status, router])
 
+  const fetchWorkload = async () => {
+    if (!session?.user?.email) return
+
+    try {
+      const jobsQuery = query(
+        collection(db, 'jobs'),
+        where('driverAssigned', '==', session.user.email),
+        where('status', 'in', ['Confirmed', 'In Progress'])
+      )
+      const querySnapshot = await getDocs(jobsQuery)
+      const jobs = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Job))
+
+      const startOfWeekDate = startOfWeek(new Date())
+      const weeklyWorkload = Array.from({ length: 7 }, (_, i) => ({
+        date: addDays(startOfWeekDate, i),
+        hours: 0,
+        jobs: 0,
+      }))
+
+      let totalHours = 0
+      let totalJobs = jobs.length
+
+      jobs.forEach(job => {
+        if (job.date) {
+          const date = new Date(job.date)
+          const dayIndex = date.getDay()
+          const jobHours = job.allocatedTime || 4
+          weeklyWorkload[dayIndex].hours += jobHours
+          weeklyWorkload[dayIndex].jobs += 1
+          totalHours += jobHours
+        }
+      })
+
+      setWeeklyWorkload(weeklyWorkload)
+      setMonthlyWorkload({ totalHours, totalJobs })
+      setJobs(jobs)
+    } catch (error) {
+      console.error('Error fetching workload:', error)
+    }
+  }
+
   useEffect(() => {
-    const fetchWorkload = async () => {
-      if (!session?.user?.email) return
+    fetchWorkload()
+  }, [session])
 
-      try {
-        const jobsQuery = query(
-          collection(db, 'jobs'),
-          where('assignedTo', '==', session.user.email),
-          where('status', 'in', ['Assigned', 'In Progress'])
-        )
-        const querySnapshot = await getDocs(jobsQuery)
-        const jobs = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Job))
-
-        const weeklyWorkload = [
-          { day: "Monday", hours: 0, jobs: 0 },
-          { day: "Tuesday", hours: 0, jobs: 0 },
-          { day: "Wednesday", hours: 0, jobs: 0 },
-          { day: "Thursday", hours: 0, jobs: 0 },
-          { day: "Friday", hours: 0, jobs: 0 },
-          { day: "Saturday", hours: 0, jobs: 0 },
-          { day: "Sunday", hours: 0, jobs: 0 },
-        ]
-
-        let totalHours = 0
-        let totalJobs = jobs.length
-
-        jobs.forEach(job => {
-          if (job.date) {
-            const date = new Date(job.date)
-            const dayIndex = date.getDay()
-            const jobHours = job.allocatedTime || 8
-            weeklyWorkload[dayIndex].hours += jobHours
-            weeklyWorkload[dayIndex].jobs += 1
-            totalHours += jobHours
-          }
-        })
-
-        setWeeklyWorkload(weeklyWorkload)
-        setMonthlyWorkload({ totalHours, totalJobs })
-        setJobs(jobs)
-      } catch (error) {
-        console.error('Error fetching workload:', error)
-      }
-    }
-
-    if (status === 'authenticated') {
-      fetchWorkload()
-    }
-  }, [session, status])
-
-  const handleLogout = async () => {
-    await signOut({ redirect: false });
-    router.push('/login');
+  const handleLogout = () => {
+    signOut()
   }
-
-  if (status === 'loading') {
-    return <div>Loading...</div>
-  }
-
-  if (!session) {
-    return null
-  }
-
-  const totalHours = weeklyWorkload.reduce((sum, day) => sum + day.hours, 0)
-  const totalJobs = weeklyWorkload.reduce((sum, day) => sum + day.jobs, 0)
 
   return (
     <div className="container mx-auto p-4">
@@ -129,18 +113,18 @@ export default function StaffLandingPageComponent() {
         <CardContent>
           <div className="grid grid-cols-2 gap-4 mb-4">
             <div className="text-center">
-              <p className="text-2xl font-bold">{totalHours}</p>
+              <p className="text-2xl font-bold">{monthlyWorkload.totalHours}</p>
               <p className="text-sm text-gray-500">Total Hours</p>
             </div>
             <div className="text-center">
-              <p className="text-2xl font-bold">{totalJobs}</p>
+              <p className="text-2xl font-bold">{monthlyWorkload.totalJobs}</p>
               <p className="text-sm text-gray-500">Total Jobs</p>
             </div>
           </div>
           <div className="space-y-2">
             {weeklyWorkload.map((day, index) => (
               <div key={index} className="flex justify-between items-center">
-                <span className="font-semibold">{day.day}</span>
+                <span className="font-semibold">{format(day.date, 'EEEE')}</span>
                 <div className="flex items-center">
                   <Clock className="mr-2 h-4 w-4 text-gray-500" />
                   <span>{day.hours} hours</span>

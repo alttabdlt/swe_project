@@ -1,11 +1,10 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { collection, getDocs, query } from 'firebase/firestore'
+import { collection, getDocs } from 'firebase/firestore'
 import { db } from '@/lib/firebaseConfig'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Progress } from '@/components/ui/progress'
 import { BarChart, Users, Briefcase } from 'lucide-react'
 import Link from 'next/link'
 import { useSession, signOut } from 'next-auth/react'
@@ -13,26 +12,36 @@ import { useRouter } from 'next/navigation'
 import { GanttChart } from './GanttChart'
 
 interface StaffWorkload {
-  id: string;
-  name: string;
-  hours: number;
-  isOverworked: boolean;
+  id: string
+  name: string
+  hours: number
 }
 
 interface Job {
-  id: string;
-  assignedTo?: string;
-  type: string;
-  date: string; // Changed from startDate
-  endDate?: string; // Made optional
-  status: string;
-  allocatedTime: number; // Add this field
+  id: string
+  driverAssigned?: string
+  technicianAssigned?: string
+  type: string
+  date: string
+  endDate?: string
+  status: string
+  allocatedTime: number
 }
 
-type GanttChartData = [string, string, Date, Date, number | null, number, string | null];
+type GanttChartData = [
+  string,
+  string,
+  Date,
+  Date,
+  number | null,
+  number,
+  string | null
+]
 
 export function ManagerLandingPageComponent() {
-  const [staffWorkload, setStaffWorkload] = useState<StaffWorkload[]>([])
+  const [lowestWorkloadStaff, setLowestWorkloadStaff] = useState<StaffWorkload[]>(
+    []
+  )
   const [workloadData, setWorkloadData] = useState<GanttChartData[]>([])
   const { data: session, status } = useSession()
   const router = useRouter()
@@ -43,77 +52,111 @@ export function ManagerLandingPageComponent() {
     }
   }, [status, router])
 
-  const calculateWorkload = (jobs: Job[]) => {
-    const workload: { [key: string]: number } = {};
-    jobs.forEach(job => {
-      if (job.assignedTo) {
-        workload[job.assignedTo] = (workload[job.assignedTo] || 0) + (job.allocatedTime || 8);
+  const calculateWorkload = (
+    jobs: Job[],
+    usersData: { [key: string]: string }
+  ) => {
+    const workloadMap: { [key: string]: number } = {}
+    jobs.forEach((job) => {
+      const allocatedTime = job.allocatedTime || 4
+
+      if (job.driverAssigned) {
+        workloadMap[job.driverAssigned] =
+          (workloadMap[job.driverAssigned] || 0) + allocatedTime
       }
-    });
-    return workload;
-  };
+
+      if (job.technicianAssigned) {
+        workloadMap[job.technicianAssigned] =
+          (workloadMap[job.technicianAssigned] || 0) + allocatedTime
+      }
+    })
+
+    const staffWorkloadArray = Object.entries(workloadMap).map(
+      ([staffId, hours]) => ({
+        id: staffId,
+        name: usersData[staffId] || 'Unknown',
+        hours,
+      })
+    )
+
+    return staffWorkloadArray
+  }
 
   useEffect(() => {
-    const fetchJobs = async () => {
+    const fetchData = async () => {
       try {
-        const jobsQuery = query(collection(db, 'jobs'));
-        const querySnapshot = await getDocs(jobsQuery);
-        const jobsData = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Job));
-        const workload = calculateWorkload(jobsData);
+        // Fetch users
+        const usersSnapshot = await getDocs(collection(db, 'users'))
+        const usersData: { [key: string]: string } = {}
+        usersSnapshot.forEach((doc) => {
+          const data = doc.data()
+          usersData[doc.id] = data.name || 'Unknown'
+        })
 
-        const usersQuery = query(collection(db, 'users'));
-        const usersSnapshot = await getDocs(usersQuery);
-        const usersData = usersSnapshot.docs.reduce((acc, doc) => {
-          acc[doc.id] = doc.data().name;
-          return acc;
-        }, {} as {[key: string]: string});
+        // Fetch jobs
+        const jobsSnapshot = await getDocs(collection(db, 'jobs'))
+        const jobsData = jobsSnapshot.docs.map((doc) => ({
+          id: doc.id,
+          ...doc.data(),
+        })) as Job[]
 
-        const staffWorkloadData = Object.entries(workload).map(([staffId, hours]) => ({
-          id: staffId,
-          name: usersData[staffId] || 'Unknown',
-          hours,
-          isOverworked: hours > 40
-        }));
+        // Calculate workload
+        const workload = calculateWorkload(jobsData, usersData)
 
-        setStaffWorkload(staffWorkloadData);
+        // Get top 3 staff with least hours worked
+        const sortedWorkload = workload.sort((a, b) => a.hours - b.hours)
+        const top3LeastHours = sortedWorkload.slice(0, 3)
+        setLowestWorkloadStaff(top3LeastHours)
 
         // Prepare data for Gantt chart
-        const formattedData: GanttChartData[] = jobsData.map(job => {
-          const startDate = new Date(job.date);
-          const endDate = job.endDate ? new Date(job.endDate) : new Date(startDate.getTime() + 24 * 60 * 60 * 1000);
-          return [
-            usersData[job.assignedTo || ''] || 'Unassigned',
-            job.type,
-            startDate,
-            endDate,
-            null, // Duration (calculated automatically by Google Charts)
-            job.status === 'Completed' ? 100 : 0, // Percent complete
-            null // Dependencies (not used in this example)
-          ];
-        });
+        const formattedData: GanttChartData[] = jobsData.flatMap((job) => {
+          const entries: GanttChartData[] = []
+          const allocatedTimeMs = (job.allocatedTime || 4) * 60 * 60 * 1000
+          const startDate = new Date(job.date)
+          const endDate = new Date(startDate.getTime() + allocatedTimeMs)
 
-        setWorkloadData(formattedData);
+          if (job.driverAssigned) {
+            const driverName = usersData[job.driverAssigned] || 'Unknown Driver'
+            entries.push([
+              driverName,
+              `${job.type} (Driver)`,
+              startDate,
+              endDate,
+              null,
+              job.status === 'Completed' ? 100 : 0,
+              null,
+            ])
+          }
+
+          if (job.technicianAssigned) {
+            const technicianName =
+              usersData[job.technicianAssigned] || 'Unknown Technician'
+            entries.push([
+              technicianName,
+              `${job.type} (Technician)`,
+              startDate,
+              endDate,
+              null,
+              job.status === 'Completed' ? 100 : 0,
+              null,
+            ])
+          }
+
+          return entries
+        })
+
+        setWorkloadData(formattedData)
       } catch (error) {
-        console.error('Error fetching jobs:', error);
+        console.error('Error fetching data:', error)
       }
-    };
+    }
 
-    fetchJobs();
-  }, []);
-
-  if (status === 'loading') {
-    return <div>Loading...</div>
-  }
-
-  if (!session) {
-    return null
-  }
-
-  const lowestWorkloadStaff = [...staffWorkload].sort((a, b) => a.hours - b.hours).slice(0, 3)
+    fetchData()
+  }, [])
 
   const handleLogout = async () => {
-    await signOut({ redirect: false });
-    router.push('/login');
+    await signOut({ redirect: false })
+    router.push('/login')
   }
 
   return (
@@ -138,49 +181,30 @@ export function ManagerLandingPageComponent() {
         </Link>
       </div>
 
+      {/* Top 3 Staff with Least Hours Worked */}
       <Card className="mb-6">
         <CardHeader>
-          <CardTitle>Staff with Lowest Workload</CardTitle>
+          <CardTitle>Top 3 Staff with Least Hours Worked</CardTitle>
         </CardHeader>
         <CardContent>
           <ul>
             {lowestWorkloadStaff.map((staff) => (
               <li key={staff.id} className="mb-2">
-                <span className="font-semibold">{staff.name}</span> - {staff.hours} hours
+                <span className="font-semibold">{staff.name}</span> -{' '}
+                {staff.hours} hours
               </li>
             ))}
           </ul>
         </CardContent>
       </Card>
 
+      {/* Gantt Chart */}
       <Card className="mb-6">
         <CardHeader>
-          <CardTitle>Staff Workload Overview</CardTitle>
+          <CardTitle>Staff Workload Gantt Chart</CardTitle>
         </CardHeader>
         <CardContent>
           <GanttChart data={workloadData} />
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Staff Workload Overview</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {staffWorkload.map((staff) => (
-            <div key={staff.id} className="mb-4">
-              <div className="flex justify-between items-center mb-1">
-                <span className="font-semibold">{staff.name}</span>
-              </div>
-              <Progress value={(staff.hours / 50) * 100} className="h-2" />
-              <div className="flex justify-between text-sm mt-1">
-                <span>{staff.hours} hours</span>
-                <span className={staff.isOverworked ? 'text-red-500' : 'text-green-500'}>
-                  {staff.isOverworked ? 'Overworked' : 'Normal'}
-                </span>
-              </div>
-            </div>
-          ))}
         </CardContent>
       </Card>
 

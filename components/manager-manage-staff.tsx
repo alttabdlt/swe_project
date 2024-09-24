@@ -1,87 +1,187 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { collection, getDocs, query, where, doc, getDoc } from 'firebase/firestore'
+import {
+  collection,
+  getDocs,
+  query,
+  where,
+  doc,
+  getDoc,
+} from 'firebase/firestore'
 import { db } from '@/lib/firebaseConfig'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableRow,
+  TableHeader,
+} from '@/components/ui/table'
 import { Calendar, ArrowLeft } from 'lucide-react'
 import Link from 'next/link'
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '@/components/ui/dialog'
 
 interface StaffMember {
-  id: string;
-  name: string;
-  role: string;
-  brand: string;
-  availability: string[];
-  workload: number;
-  preference: string;
+  id: string
+  name: string
+  role: string
+  brand: string
+  availability: string[]
+  workload: number
+  preference: string
 }
 
 export default function ManagerManageStaff() {
   const [staff, setStaff] = useState<StaffMember[]>([])
   const [isLoading, setIsLoading] = useState(true)
-  const [selectedStaffSchedule, setSelectedStaffSchedule] = useState<{[key: string]: string}>({})
+  const [selectedStaffSchedule, setSelectedStaffSchedule] = useState<{
+    [key: string]: string
+  }>({})
 
   useEffect(() => {
     const fetchStaff = async () => {
       try {
-        const staffQuery = query(collection(db, 'users'), where('role', 'in', ['staff', 'technician']));
-        const querySnapshot = await getDocs(staffQuery);
-        const staffData = await Promise.all(querySnapshot.docs.map(async (doc) => {
-          const data = doc.data();
-          const availability = await fetchStaffAvailability(doc.id);
-          return {
-            id: doc.id,
-            name: data.name || 'Unknown',
-            role: data.role || 'Unknown',
-            brand: data.brand || 'Not specified',
-            availability: availability ? availability.dates : [],
-            workload: data.workload || 0,
-            preference: availability ? availability.jobPreference : 'Not specified'
-          } as StaffMember;
-        }));
-        setStaff(staffData);
+        const staffQuery = query(collection(db, 'users'), where('role', '!=', 'manager'))
+        const querySnapshot = await getDocs(staffQuery)
+        const staffData = await Promise.all(
+          querySnapshot.docs.map(async (docSnap) => {
+            const data = docSnap.data()
+            const availability = await fetchStaffAvailability(docSnap.id)
+            const workload = await calculateWorkload(docSnap.id)
+            return {
+              id: docSnap.id,
+              name: data.name || 'Unknown',
+              role: data.role || 'Unknown',
+              brand: data.brand || 'Not specified',
+              availability: availability ? availability.dates : [],
+              workload: workload || 0,
+              preference:
+                availability ? availability.jobPreference : 'Not specified',
+            } as StaffMember
+          })
+        )
+        setStaff(staffData)
       } catch (error) {
-        console.error('Error fetching staff data:', error);
+        console.error('Error fetching staff data:', error)
       } finally {
-        setIsLoading(false);
+        setIsLoading(false)
       }
-    };
+    }
 
-    fetchStaff();
+    fetchStaff()
   }, [])
 
   const fetchStaffAvailability = async (staffId: string) => {
     try {
-      const docRef = doc(db, 'staffAvailability', staffId);
-      const docSnap = await getDoc(docRef);
-      if (docSnap.exists()) {
-        return docSnap.data();
+      // Check both 'staffAvailability' and 'technicianAvailability' collections
+      const staffDocRef = doc(db, 'staffAvailability', staffId)
+      const staffDocSnap = await getDoc(staffDocRef)
+      if (staffDocSnap.exists()) {
+        return staffDocSnap.data()
       }
-      return null;
+
+      const techDocRef = doc(db, 'technicianAvailability', staffId)
+      const techDocSnap = await getDoc(techDocRef)
+      if (techDocSnap.exists()) {
+        return techDocSnap.data()
+      }
+
+      return null
     } catch (error) {
-      console.error('Error fetching staff availability:', error);
-      return null;
+      console.error('Error fetching staff availability:', error)
+      return null
     }
-  };
+  }
+
+  const calculateWorkload = async (staffId: string) => {
+    try {
+      const jobsQuery = query(
+        collection(db, 'jobs'),
+        where('driverAssigned', '==', staffId)
+      )
+      const techJobsQuery = query(
+        collection(db, 'jobs'),
+        where('technicianAssigned', '==', staffId)
+      )
+
+      const [driverJobsSnap, technicianJobsSnap] = await Promise.all([
+        getDocs(jobsQuery),
+        getDocs(techJobsQuery),
+      ])
+
+      let totalWorkload = 0
+
+      driverJobsSnap.forEach((doc) => {
+        const jobData = doc.data()
+        totalWorkload += jobData.allocatedTime || 4
+      })
+
+      technicianJobsSnap.forEach((doc) => {
+        const jobData = doc.data()
+        totalWorkload += jobData.allocatedTime || 4
+      })
+
+      return totalWorkload
+    } catch (error) {
+      console.error('Error calculating workload:', error)
+      return 0
+    }
+  }
 
   const fetchStaffSchedule = async (staffId: string) => {
     try {
-      const jobsQuery = query(collection(db, 'jobs'), where('assignedTo', '==', staffId));
-      const querySnapshot = await getDocs(jobsQuery);
-      const schedule: {[key: string]: string} = {};
-      querySnapshot.docs.forEach(doc => {
-        const jobData = doc.data();
-        schedule[jobData.date] = `${jobData.type} at ${jobData.location}`;
-      });
-      setSelectedStaffSchedule(schedule);
+      const jobsQuery = query(
+        collection(db, 'jobs'),
+        where('driverAssigned', '==', staffId)
+      )
+      const techJobsQuery = query(
+        collection(db, 'jobs'),
+        where('technicianAssigned', '==', staffId)
+      )
+
+      const [driverJobsSnap, technicianJobsSnap] = await Promise.all([
+        getDocs(jobsQuery),
+        getDocs(techJobsQuery),
+      ])
+
+      const schedule: { [key: string]: string } = {}
+
+      driverJobsSnap.docs.forEach((docSnap) => {
+        const jobData = docSnap.data()
+        schedule[jobData.date] = `${jobData.type} at ${jobData.location} (Driver)`
+      })
+
+      technicianJobsSnap.docs.forEach((docSnap) => {
+        const jobData = docSnap.data()
+        schedule[jobData.date] = `${
+          jobData.type
+        } at ${jobData.location} (Technician)`
+      })
+
+      // Sort the schedule by date
+      const sortedSchedule = Object.entries(schedule).sort(
+        ([dateA], [dateB]) => new Date(dateA).getTime() - new Date(dateB).getTime()
+      )
+
+      setSelectedStaffSchedule(Object.fromEntries(sortedSchedule))
     } catch (error) {
-      console.error('Error fetching staff schedule:', error);
+      console.error('Error fetching staff schedule:', error)
     }
-  };
+  }
 
   if (isLoading) {
     return <div>Loading...</div>
@@ -121,15 +221,19 @@ export default function ManagerManageStaff() {
                   <TableCell>{employee.name}</TableCell>
                   <TableCell>{employee.role}</TableCell>
                   <TableCell>{employee.brand}</TableCell>
-                  <TableCell>{employee.availability.join(', ')}</TableCell>
+                  <TableCell>
+                    {Array.isArray(employee.availability)
+                      ? employee.availability.join(', ')
+                      : 'Not specified'}
+                  </TableCell>
                   <TableCell>{employee.workload} hours</TableCell>
                   <TableCell>{employee.preference}</TableCell>
                   <TableCell>
                     <Dialog>
                       <DialogTrigger asChild>
-                        <Button 
-                          variant="default" 
-                          size="sm" 
+                        <Button
+                          variant="default"
+                          size="sm"
                           onClick={() => fetchStaffSchedule(employee.id)}
                           className="bg-blue-500 hover:bg-blue-600 text-white"
                         >
@@ -142,9 +246,13 @@ export default function ManagerManageStaff() {
                           <DialogTitle>{employee.name}'s Schedule</DialogTitle>
                         </DialogHeader>
                         <div className="mt-4">
-                          {Object.entries(selectedStaffSchedule).map(([date, job]) => (
-                            <p key={date}>{date}: {job}</p>
-                          ))}
+                          {Object.entries(selectedStaffSchedule).map(
+                            ([date, job]) => (
+                              <p key={date}>
+                                {date}: {job}
+                              </p>
+                            )
+                          )}
                         </div>
                       </DialogContent>
                     </Dialog>
