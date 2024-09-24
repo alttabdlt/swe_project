@@ -26,7 +26,7 @@ interface Job {
   allocatedTime: number;
 }
 
-export function TechnicianLandingPageComponent() {
+export default function StaffLandingPageComponent() {
   const [weeklyWorkload, setWeeklyWorkload] = useState<WorkloadDay[]>([])
   const [monthlyWorkload, setMonthlyWorkload] = useState({ totalHours: 0, totalJobs: 0 })
   const [jobs, setJobs] = useState<Job[]>([])
@@ -107,15 +107,15 @@ export function TechnicianLandingPageComponent() {
 
   return (
     <div className="container mx-auto p-4">
-      <h1 className="text-3xl font-bold mb-6">Technician Dashboard</h1>
+      <h1 className="text-3xl font-bold mb-6">Staff Dashboard</h1>
       
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-        <Link href="/technician/manage-availability">
+        <Link href="/staff/manage-availability">
           <Button className="h-16 text-lg w-full">
             <Calendar className="mr-2 h-6 w-6" /> Manage Availability
           </Button>
         </Link>
-        <Link href="/technician/manage-jobs">
+        <Link href="/staff/manage-jobs">
           <Button className="h-16 text-lg w-full">
             <Briefcase className="mr-2 h-6 w-6" /> Manage Jobs
           </Button>

@@ -1,5 +1,5 @@
 import { SignupPage } from '@/components/signup-page'
 
-export default function SignUp() {
+export default function SignupPageWrapper() {
   return <SignupPage />
 }

@@ -20,7 +20,7 @@ interface Job {
   status: string;
 }
 
-export function TechnicianManageJobs() {
+export function StaffManageJobs() {
   const [jobs, setJobs] = useState<Job[]>([])
   const { data: session } = useSession()
 
@@ -29,11 +29,7 @@ export function TechnicianManageJobs() {
       if (!session?.user?.email) return
 
       try {
-        const q = query(
-          collection(db, 'jobs'),
-          where('assignedTo', '==', session.user.email),
-          where('status', 'in', ['Assigned', 'In Progress'])
-        )
+        const q = query(collection(db, 'jobs'), where('assignedTo', '==', session.user.email))
         const querySnapshot = await getDocs(q)
         const jobsData = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Job))
         setJobs(jobsData)
@@ -45,14 +41,15 @@ export function TechnicianManageJobs() {
     fetchJobs()
   }, [session])
 
-  const handleCompleteJob = async (jobId: string) => {
+  const handleRejectJob = async (jobId: string) => {
     try {
       await updateDoc(doc(db, 'jobs', jobId), {
-        status: 'Completed'
+        status: 'Rejected',
+        assignedTo: null
       })
-      setJobs(jobs.map(job => job.id === jobId ? { ...job, status: 'Completed' } : job))
+      setJobs(jobs.filter(job => job.id !== jobId))
     } catch (error) {
-      console.error('Error completing job:', error)
+      console.error('Error rejecting job:', error)
     }
   }
 
@@ -60,7 +57,7 @@ export function TechnicianManageJobs() {
     <div className="container mx-auto p-4">
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-3xl font-bold">Manage Jobs</h1>
-        <Link href="/technician">
+        <Link href="/staff">
           <Button variant="ghost">
             <ArrowLeft className="mr-2 h-5 w-5" /> Back to Dashboard
           </Button>
@@ -91,25 +88,23 @@ export function TechnicianManageJobs() {
                   <TableCell>{job.location}</TableCell>
                   <TableCell>{job.status}</TableCell>
                   <TableCell>
-                    {job.status !== 'Completed' && (
-                      <AlertDialog>
-                        <AlertDialogTrigger asChild>
-                          <Button variant="outline">Complete</Button>
-                        </AlertDialogTrigger>
-                        <AlertDialogContent>
-                          <AlertDialogHeader>
-                            <AlertDialogTitle>Are you sure you want to mark this job as completed?</AlertDialogTitle>
-                            <AlertDialogDescription>
-                              This action cannot be undone. Please ensure all work has been finished before proceeding.
-                            </AlertDialogDescription>
-                          </AlertDialogHeader>
-                          <AlertDialogFooter>
-                            <AlertDialogCancel>Cancel</AlertDialogCancel>
-                            <AlertDialogAction onClick={() => handleCompleteJob(job.id)}>Complete Job</AlertDialogAction>
-                          </AlertDialogFooter>
-                        </AlertDialogContent>
-                      </AlertDialog>
-                    )}
+                    <AlertDialog>
+                      <AlertDialogTrigger asChild>
+                        <Button variant="destructive">Reject</Button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>Are you sure you want to reject this job?</AlertDialogTitle>
+                          <AlertDialogDescription>
+                            You will be warned to discuss this job with your manager before proceeding with the rejection.
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel>Cancel</AlertDialogCancel>
+                          <AlertDialogAction onClick={() => handleRejectJob(job.id)}>Reject Job</AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
                   </TableCell>
                 </TableRow>
               ))}
