@@ -1,18 +1,15 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { collection, getDocs, query, where } from 'firebase/firestore'
-import { db } from '@/lib/firebaseConfig'
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Calendar, Clock, Briefcase } from "lucide-react"
 import Link from 'next/link'
 import { useSession, signOut } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
-import { format, startOfWeek, addDays } from 'date-fns'
 
 interface WorkloadDay {
-  date: Date;
+  day: string;
   hours: number;
   jobs: number;
 }
@@ -40,29 +37,31 @@ export default function StaffLandingPageComponent() {
     }
   }, [status, router])
 
-  const fetchWorkload = async () => {
-    if (!session?.user?.email) return
+  useEffect(() => {
+    const fetchWorkload = async () => {
+      // Mock data
+      const mockJobs: Job[] = [
+        { id: '1', date: '2023-10-01', type: 'Installation', brand: 'Dicon', location: 'Pasir Ris', status: 'Confirmed', allocatedTime: 4 },
+        { id: '2', date: '2023-10-02', type: 'Servicing', brand: 'M Electric', location: 'Tampines', status: 'In Progress', allocatedTime: 3 },
+        { id: '3', date: '2023-10-03', type: 'Installation & Servicing', brand: 'Dicon', location: 'Bedok', status: 'Confirmed', allocatedTime: 5 },
+        { id: '4', date: '2023-10-04', type: 'Installation', brand: 'M Electric', location: 'Jurong', status: 'In Progress', allocatedTime: 2 },
+        { id: '5', date: '2023-10-05', type: 'Servicing', brand: 'Dicon', location: 'Ang Mo Kio', status: 'Confirmed', allocatedTime: 4 },
+      ]
 
-    try {
-      const jobsQuery = query(
-        collection(db, 'jobs'),
-        where('driverAssigned', '==', session.user.email),
-        where('status', 'in', ['Confirmed', 'In Progress'])
-      )
-      const querySnapshot = await getDocs(jobsQuery)
-      const jobs = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Job))
-
-      const startOfWeekDate = startOfWeek(new Date())
-      const weeklyWorkload = Array.from({ length: 7 }, (_, i) => ({
-        date: addDays(startOfWeekDate, i),
-        hours: 0,
-        jobs: 0,
-      }))
+      const weeklyWorkload = [
+        { day: "Sunday", hours: 0, jobs: 0 },
+        { day: "Monday", hours: 0, jobs: 0 },
+        { day: "Tuesday", hours: 0, jobs: 0 },
+        { day: "Wednesday", hours: 0, jobs: 0 },
+        { day: "Thursday", hours: 0, jobs: 0 },
+        { day: "Friday", hours: 0, jobs: 0 },
+        { day: "Saturday", hours: 0, jobs: 0 },
+      ]
 
       let totalHours = 0
-      let totalJobs = jobs.length
+      let totalJobs = mockJobs.length
 
-      jobs.forEach(job => {
+      mockJobs.forEach(job => {
         if (job.date) {
           const date = new Date(job.date)
           const dayIndex = date.getDay()
@@ -75,13 +74,9 @@ export default function StaffLandingPageComponent() {
 
       setWeeklyWorkload(weeklyWorkload)
       setMonthlyWorkload({ totalHours, totalJobs })
-      setJobs(jobs)
-    } catch (error) {
-      console.error('Error fetching workload:', error)
+      setJobs(mockJobs)
     }
-  }
 
-  useEffect(() => {
     fetchWorkload()
   }, [session])
 
@@ -124,7 +119,7 @@ export default function StaffLandingPageComponent() {
           <div className="space-y-2">
             {weeklyWorkload.map((day, index) => (
               <div key={index} className="flex justify-between items-center">
-                <span className="font-semibold">{format(day.date, 'EEEE')}</span>
+                <span className="font-semibold">{day.day}</span>
                 <div className="flex items-center">
                   <Clock className="mr-2 h-4 w-4 text-gray-500" />
                   <span>{day.hours} hours</span>

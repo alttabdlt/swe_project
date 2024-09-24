@@ -23,6 +23,7 @@ import {
   TableBody,
   TableCell,
   TableHead,
+  TableHeader,
   TableRow,
 } from '@/components/ui/table'
 import {
@@ -104,7 +105,7 @@ export function TechnicianManageJobs() {
     try {
       await updateDoc(doc(db, 'jobs', jobId), {
         status: 'Confirmed',
-        allocatedTime: 4, // Set the allocated time to 4 hours
+        allocatedTime: 4,
       })
       setJobs((jobs) =>
         jobs.map((job) =>
@@ -162,16 +163,16 @@ export function TechnicianManageJobs() {
         </CardHeader>
         <CardContent>
           <Table>
-            <TableHead>
+            <TableHeader>
               <TableRow>
-                <TableCell>Date</TableCell>
-                <TableCell>Type</TableCell>
-                <TableCell>Brand</TableCell>
-                <TableCell>Location</TableCell>
-                <TableCell>Status</TableCell>
-                <TableCell>Action</TableCell>
+                <TableHead>Date</TableHead>
+                <TableHead>Type</TableHead>
+                <TableHead>Brand</TableHead>
+                <TableHead>Location</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Action</TableHead>
               </TableRow>
-            </TableHead>
+            </TableHeader>
             <TableBody>
               {jobs.map((job) => (
                 <TableRow key={job.id}>
@@ -182,7 +183,7 @@ export function TechnicianManageJobs() {
                   <TableCell>{job.status}</TableCell>
                   <TableCell>
                     {job.status === 'Pending' && (
-                      <>
+                      <div className="flex space-x-2">
                         <Button
                           variant="outline"
                           onClick={() => handleAcceptJob(job.id)}
@@ -195,7 +196,7 @@ export function TechnicianManageJobs() {
                         >
                           Reject
                         </Button>
-                      </>
+                      </div>
                     )}
                     {job.status === 'Confirmed' && (
                       <AlertDialog>
